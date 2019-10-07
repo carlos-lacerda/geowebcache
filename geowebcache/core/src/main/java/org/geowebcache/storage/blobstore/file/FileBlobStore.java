@@ -32,10 +32,15 @@ import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.logging.Log;
@@ -65,7 +70,25 @@ import com.google.common.base.Preconditions;
 public class FileBlobStore implements BlobStore {
     private static Log log = LogFactory
             .getLog(org.geowebcache.storage.blobstore.file.FileBlobStore.class);
+   //AXX BEGIN
+    private ReadWriteLock rwLock = new ReentrantReadWriteLock();
+    
+    private static final String GWC_TRUNCATE_RETRY_COUNT = "GWC_TRUNCATE_RETRY_COUNT";
+    private static final String GWC_TRUNCATE_RETRY_WAIT = "GWC_TRUNCATE_RETRY_WAIT";
+    private static final String GWC_TRUNCATE_FILE_LOG = "GWC_TRUNCATE_FILE_LOG";
 
+    
+    private static final int DELETE_RETRY_COUNT;
+    private static final int DELETE_RETRY_WAIT;
+    private static final String DELETE_LOG_FILE;
+    
+    static{
+    	DELETE_RETRY_COUNT = (int) toLong(GWC_TRUNCATE_RETRY_COUNT,System.getProperty(GWC_TRUNCATE_RETRY_COUNT), 10);
+    	DELETE_RETRY_WAIT = (int) toLong(GWC_TRUNCATE_RETRY_WAIT,System.getProperty(GWC_TRUNCATE_RETRY_WAIT), 1000);
+    	DELETE_LOG_FILE = System.getProperty(GWC_TRUNCATE_FILE_LOG);
+    }
+    //AXX END
+        
     static final int DEFAULT_DISK_BLOCK_SIZE = 4096;
 
     public static final int BUFFER_SIZE = 32768;
@@ -353,7 +376,7 @@ public class FileBlobStore implements BlobStore {
         int count = 0;
 
         String prefix = path + File.separator + filteredLayerName(trObj.getLayerName());
-
+        String logFile = path + File.separator + DELETE_LOG_FILE;
         final File layerPath = new File(prefix);
 
         // If it wasn't there to be deleted,
@@ -377,37 +400,72 @@ public class FileBlobStore implements BlobStore {
 
         final String gridsetPrefix = filteredGridSetId(gridSetId);
         for (File srsZoomParamId : srsZoomDirs) {
-            int zoomLevel = findZoomLevel(gridsetPrefix, srsZoomParamId.getName());
-            File[] intermediates = srsZoomParamId.listFiles(tileFinder);
+        	int zoomLevel = findZoomLevel(gridsetPrefix, srsZoomParamId.getName());
+        	File[] intermediates = srsZoomParamId.listFiles(tileFinder);
 
-            for (File imd : intermediates) {
-                File[] tiles = imd.listFiles(tileFinder);
-                long length;
+        	for (File imd : intermediates) {
+        		File[] tiles = imd.listFiles(tileFinder);
+        		long length;
+        		boolean deleted = false;
+        		String currentFile="";
+        		for (File tile : tiles) {
+        			length = tile.length();
+        			//AXX ADDED
+        			currentFile = tile.toString();
+        			for(int i=0;i<DELETE_RETRY_COUNT;i++) {
+        				try {
+        					log.debug("Deleting:"+tile.toString());
+        					deleted = Files.deleteIfExists(tile.toPath());
+        				} catch (IOException e1) {
+        					log.error("NIO DELETE ERROR:"+tile.toString());
+        				}
+        				//deleted = tile.delete();
+        				if (deleted) {
+        					String[] coords = tile.getName().split("\\.")[0].split("_");
+        					long x = Long.parseLong(coords[0]);
+        					long y = Long.parseLong(coords[1]);
+        					listeners.sendTileDeleted(layerName, gridSetId, blobFormat, parametersId,
+        							x, y, zoomLevel, padSize(length));
+        					count++;
+        					break;//delete success
+        				} else {//try delete again after DELETE_RETRY_WAIT
+        					try {
+        						int waitTime = (int)Math.abs(Math.random()*DELETE_RETRY_WAIT); 
+        						log.error("Can't delete:"+currentFile+" ["+i+"] - Retrying in "+waitTime+"ms");
+        						Thread.currentThread().sleep(waitTime);
+        						continue;
+        					} catch (InterruptedException e) {
+        						log.error("TRUNCATE FILE ERROR:", e);
+        					}
+        				}
+        			}
+        			if(!deleted && !currentFile.isEmpty()) {
+        				//File not deleted after retry
+        				try {
+        					log.info("File:'"+currentFile + "' Added for later deletion");
+        					currentFile=currentFile+"\n";
+        					Files.write(Paths.get(logFile), 
+        							currentFile.getBytes("utf-8"),
+        							StandardOpenOption.CREATE,
+        							StandardOpenOption.APPEND);
+        				} catch (IOException e) {
+        					e.printStackTrace();
+        					log.error("LOG TRUNCATE_FILE ERROR:", e);
+        				} 
+        			}
+        			currentFile="";
+        		}
+        		// Try deleting the directory (will be done only if the directory is empty)
+        		//                if (imd.delete()) {
+        		//                    // listeners.sendDirectoryDeleted(layerName);
+        		//                }
+        	}
 
-                for (File tile : tiles) {
-                    length = tile.length();
-                    boolean deleted = tile.delete();
-                    if (deleted) {
-                        String[] coords = tile.getName().split("\\.")[0].split("_");
-                        long x = Long.parseLong(coords[0]);
-                        long y = Long.parseLong(coords[1]);
-                        listeners.sendTileDeleted(layerName, gridSetId, blobFormat, parametersId,
-                                x, y, zoomLevel, padSize(length));
-                        count++;
-                    }
-                }
-
-                // Try deleting the directory (will be done only if the directory is empty)
-                if (imd.delete()) {
-                    // listeners.sendDirectoryDeleted(layerName);
-                }
-            }
-
-            // Try deleting the zoom directory (will be done only if the directory is empty)
-            if (srsZoomParamId.delete()) {
-                count++;
-                // listeners.sendDirectoryDeleted(layerName);
-            }
+        	// Try deleting the zoom directory (will be done only if the directory is empty)
+        	//            if (srsZoomParamId.delete()) {
+        	//                count++;
+        	//                // listeners.sendDirectoryDeleted(layerName);
+        	//            }
         }
 
         log.info("Truncated " + count + " tiles");
@@ -721,6 +779,19 @@ public class FileBlobStore implements BlobStore {
         long actuallyUsedStorage = blockSize * (int) Math.ceil((double) fileSize / blockSize);
 
         return actuallyUsedStorage;
+    }
+    
+    private static long toLong(String varName, String paramVal, long defaultVal) {
+        if (paramVal == null) {
+            return defaultVal;
+        }
+        try {
+            return Long.valueOf(paramVal);
+        } catch (NumberFormatException e) {
+            log.warn("Invalid environment parameter for " + varName + ": '" + paramVal
+                    + "'. Using default value: " + defaultVal);
+        }
+        return defaultVal;
     }
 
 }
