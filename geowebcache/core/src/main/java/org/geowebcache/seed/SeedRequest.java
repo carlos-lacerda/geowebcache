@@ -86,6 +86,20 @@ public class SeedRequest {
         this.format = mimeFormat;
         this.enumType = type;
         this.parameters = parameters;
+        StringBuilder sb =new StringBuilder() 
+        		.append("\n############################")
+        		.append("\n### SEED REQUEST CREATED ###")
+        		.append("\n############################")
+        		.append("\nTYPE:------").append(type)
+        		.append("\nLAYER:-----").append(layerName)
+        		.append("\nBOUNDS-----[").append(bounds).append("]")
+        		.append("\nGRIDSET:---").append(gridSetId)
+        		.append("\nTHREADS:---").append(threadCount)
+        		.append("\nZOOM-------START[").append(zoomStart).append("] END [").append(zoomStop).append("]")
+        		.append("\nFORMAT:----").append(mimeFormat)
+        		.append("\nPARAMS:----").append(parameters)
+        		.append("\n############################");
+        log.info(sb);
     }
 
     /**
