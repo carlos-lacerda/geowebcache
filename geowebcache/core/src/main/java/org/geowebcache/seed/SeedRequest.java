@@ -87,18 +87,15 @@ public class SeedRequest {
         this.enumType = type;
         this.parameters = parameters;
         StringBuilder sb =new StringBuilder() 
-        		.append("\n############################")
-        		.append("\n### SEED REQUEST CREATED ###")
-        		.append("\n############################")
-        		.append("\nTYPE:------").append(type)
-        		.append("\nLAYER:-----").append(layerName)
-        		.append("\nBOUNDS-----[").append(bounds).append("]")
-        		.append("\nGRIDSET:---").append(gridSetId)
-        		.append("\nTHREADS:---").append(threadCount)
-        		.append("\nZOOM-------START[").append(zoomStart).append("] END [").append(zoomStop).append("]")
-        		.append("\nFORMAT:----").append(mimeFormat)
-        		.append("\nPARAMS:----").append(parameters)
-        		.append("\n############################");
+        		.append("SEED REQUEST CREATED")
+        		.append(";TYPE:").append(type)
+        		.append(";LAYER:").append(layerName)
+        		.append(";BOUNDS[").append(bounds).append("]")
+        		.append(";GRIDSET:").append(gridSetId)
+        		.append(";THREADS:").append(threadCount)
+        		.append(";ZOOMSTART[").append(zoomStart).append("] END [").append(zoomStop).append("]")
+        		.append(";FORMAT:").append(mimeFormat)
+        		.append(";PARAMS:").append(parameters);
         log.info(sb);
     }
 
@@ -221,5 +218,18 @@ public class SeedRequest {
      */
     public Map<String, String> getParameters() {
         return parameters;
+    }
+    public String toString() {
+    	 StringBuilder sb =new StringBuilder() 
+         		.append("SEED REQUEST")
+         		.append(";TYPE:").append(getType())
+         		.append(";LAYER:").append(getLayerName())
+         		.append(";BOUNDS[").append(bounds).append("]")
+         		.append(";GRIDSET:").append(getGridSetId())
+         		.append(";THREADS:").append(getThreadCount())
+         		.append(";ZOOMSTART[").append(getZoomStart()).append("] END [").append(getZoomStop()).append("]")
+         		.append(";FORMAT:").append(getMimeFormat())
+         		.append(";PARAMS:").append(parameters);
+    	 return sb.toString();
     }
 }

@@ -205,13 +205,13 @@ public class TileBreeder implements ApplicationContextAware {
     // TODO: The SeedRequest specifies a layer name. Would it make sense to use that instead of including one as a separate parameter?
     public void seed(final String layerName, final SeedRequest sr) throws GeoWebCacheException {
 
+    	log.info(sr);
+    	
         TileLayer tl = findTileLayer(layerName);
 
         TileRange tr = createTileRange(sr, tl);
 
-        GWCTask[] tasks = createTasks(tr, tl, sr.getType(), sr.getThreadCount(),
-                sr.getFilterUpdate());
-
+        GWCTask[] tasks = createTasks(tr, tl, sr.getType(), sr.getThreadCount(),sr.getFilterUpdate());
         dispatchTasks(tasks);
     }
 
